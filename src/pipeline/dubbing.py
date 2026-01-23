@@ -14,18 +14,24 @@ class VideoDubber:
         with open(script_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
-    def generate_audio_track(self, script: List[Dict], output_path: str, debug_dir: Optional[str] = None):
+    def generate_audio_track(self, script: List[Dict], output_path: str, debug_dir: Optional[str] = None, 
+                             default_speaker: str = "Uncle_Fu", default_language: str = "Chinese"):
         timeline = AudioTimeline()
         
         if debug_dir:
             os.makedirs(debug_dir, exist_ok=True)
             print(f"Debug mode enabled: saving segments to {debug_dir}")
 
-        print(f"Processing {len(script)} segments...")
+        print(f"Processing {len(script)} segments with speaker={default_speaker}, language={default_language}...")
         for i, segment in enumerate(script):
             start_time = segment.get("start", 0.0)
             text = segment.get("text", "")
-            speaker = segment.get("speaker", "Uncle_Fu")
+            # Override script settings with global defaults if provided, 
+            # OR strictly enforce global defaults as requested by user.
+            # User said: "a complete video can only contain one speaker+language selection"
+            # So we strictly use the passed in arguments.
+            speaker = default_speaker
+            language = default_language
             instruct = segment.get("instruct", None)
             
             if not text:
@@ -33,7 +39,7 @@ class VideoDubber:
                 
             print(f"[{i+1}/{len(script)}] Generating at {start_time}s: {text[:20]}...")
             try:
-                audio_data, sr = self.tts.generate(text, speaker=speaker, instruct=instruct)
+                audio_data, sr = self.tts.generate(text, speaker=speaker, language=language, instruct=instruct)
                 
                 # Debug: save individual segment
                 if debug_dir:
