@@ -2407,6 +2407,7 @@ name = "vox-timeline"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "gradio" },
     { name = "moviepy" },
     { name = "openai-whisper" },
     { name = "pydub" },
@@ -2420,6 +2421,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "gradio", specifier = ">=4.0.0" },
     { name = "moviepy", specifier = ">=1.0.3" },
     { name = "openai-whisper", specifier = ">=20231117" },
     { name = "pydub", specifier = ">=0.25.1" },

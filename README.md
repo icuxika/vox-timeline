@@ -59,6 +59,17 @@ python main.py --script script.json --video input.mp4 --video-out output.mp4
 python main.py --script script.json --output debug.wav --debug-dir ./debug_clips
 ```
 
+### 4. Web UI 可视化界面
+
+项目提供了一个基于 Web 的图形界面，方便在线编辑脚本、生成和试听音频。
+
+启动 Web UI:
+```bash
+python app.py
+```
+
+启动后，在浏览器访问 `http://127.0.0.1:7860` 即可使用。
+
 ## 项目结构
 
 *   `src/core/tts.py`: TTS 引擎封装，负责单句生成与数据类型转换。

@@ -12,6 +12,7 @@ dependencies = [
   "openai-whisper>=20231117",
   "moviepy>=1.0.3",
   "pydub>=0.25.1",
+  "gradio>=4.0.0",
 ]
 
 [tool.uv.sources]
