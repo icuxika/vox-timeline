@@ -49,20 +49,20 @@ SPEAKER_INFO = """
 
 | Speaker | Voice Description (声音描述) | Native Language (母语) |
 | :--- | :--- | :--- |
-| **Vivian** | 明亮、略带棱角的年轻女性声音 | Chinese |
-| **Serena** | 温暖、温柔的年轻女性声音 | Chinese |
-| **Uncle_Fu** | 醇厚、低沉的成熟男性声音 | Chinese |
-| **Dylan** | 青春、清脆自然的北京口音男性声音 | Chinese (Beijing) |
-| **Eric** | 活泼、略带沙哑明亮的成都口音男性声音 | Chinese (Sichuan) |
-| **Ryan** | 充满活力、节奏感强的男性声音 | English |
-| **Aiden** | 阳光、中频清晰的美国男性声音 | English |
-| **Ono_Anna** | 俏皮、轻盈灵动的日语女性声音 | Japanese |
-| **Sohee** | 温暖、情感丰富的韩语女性声音 | Korean |
+| **vivian** | 明亮、略带棱角的年轻女性声音 | Chinese |
+| **serena** | 温暖、温柔的年轻女性声音 | Chinese |
+| **uncle_fu** | 醇厚、低沉的成熟男性声音 | Chinese |
+| **dylan** | 青春、清脆自然的北京口音男性声音 | Chinese (Beijing) |
+| **eric** | 活泼、略带沙哑明亮的成都口音男性声音 | Chinese (Sichuan) |
+| **ryan** | 充满活力、节奏感强的男性声音 | English |
+| **aiden** | 阳光、中频清晰的美国男性声音 | English |
+| **ono_anna** | 俏皮、轻盈灵动的日语女性声音 | Japanese |
+| **sohee** | 温暖、情感丰富的韩语女性声音 | Korean |
 """
 
 SPEAKER_OPTIONS = [
-    "Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", 
-    "Ryan", "Aiden", "Ono_Anna", "Sohee"
+    "aiden", "dylan", "eric", "ono_anna", "ryan", 
+    "serena", "sohee", "uncle_fu", "vivian"
 ]
 
 LANGUAGE_OPTIONS = [
@@ -101,17 +101,11 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
                 gr.Markdown(SPEAKER_INFO)
         
         with gr.Column(scale=1):
-            gr.Markdown("### ⚙️ 全局设置 (Global Settings)")
-            speaker_dropdown = gr.Dropdown(
-                choices=SPEAKER_OPTIONS, 
-                value="Uncle_Fu", 
-                label="Select Speaker (选择说话人)"
-            )
-            language_dropdown = gr.Dropdown(
-                choices=LANGUAGE_OPTIONS, 
-                value="Chinese", 
-                label="Select Language (选择语言)"
-            )
+            gr.Markdown("### 🎛️ 全局设置 (Global Settings)")
+            
+            # Global controls
+            speaker_dropdown = gr.Dropdown(choices=SPEAKER_OPTIONS, value="uncle_fu", label="Select Speaker (选择说话人)")
+            language_dropdown = gr.Dropdown(choices=LANGUAGE_OPTIONS, value="Chinese", label="Select Language (选择语言)")
             
             generate_btn = gr.Button("🎵 Generate Audio (生成音频)", variant="primary")
             
