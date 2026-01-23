@@ -1,0 +1,20 @@
+[
+    {
+        "start": 0.0,
+        "text": "欢迎使用 Vox Timeline 配音系统。",
+        "speaker": "Uncle_Fu",
+        "instruct": "用激动的语气"
+    },
+    {
+        "start": 3.0,
+        "text": "这是一个演示脚本，用于测试从文本直接生成时间轴音频的功能。",
+        "speaker": "Uncle_Fu",
+        "instruct": "用平稳的语气"
+    },
+    {
+        "start": 8.0,
+        "text": "我们可以自由定义开始时间，无需依赖原视频的语音识别。",
+        "speaker": "Uncle_Fu",
+        "instruct": "用自信的语气"
+    }
+]
