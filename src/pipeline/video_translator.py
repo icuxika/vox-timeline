@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 from typing import Optional, List, Dict, Tuple
 try:
     from moviepy.editor import VideoFileClip
@@ -60,9 +61,10 @@ class VideoTranslatorPipeline:
         print(f"Generated subtitles: {output_path}")
 
     def process_video(self, video_path: str, source_lang: str, target_lang: str, 
-                      output_dir: str = "output", speaker: str = "uncle_fu") -> Tuple[str, List[Dict], str, str]:
+                      output_dir: str = "output", speaker: str = "uncle_fu",
+                      subtitle_mode: str = "hard") -> Tuple[str, List[Dict], str, str, str]:
         """
-        Process video: Extract Audio -> ASR -> Translate -> TTS
+        Process video: Extract Audio -> ASR -> Translate -> TTS -> Merge
         
         Args:
             video_path: Path to input video.
@@ -70,9 +72,10 @@ class VideoTranslatorPipeline:
             target_lang: Target language code (e.g., 'en', 'zh').
             output_dir: Directory to save outputs.
             speaker: TTS speaker to use.
+            subtitle_mode: "hard" (burn-in) or "soft" (mov_text stream).
             
         Returns:
-            Tuple of (final_audio_path, dubbing_script, src_srt_path, trans_srt_path)
+            Tuple of (final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path)
         """
         self._ensure_models_loaded()
         os.makedirs(output_dir, exist_ok=True)
@@ -153,4 +156,54 @@ class VideoTranslatorPipeline:
             total_duration=video_duration
         )
         
-        return final_audio_path, dubbing_script, src_srt_path, trans_srt_path
+        # 5. Merge Video + Audio + Subtitles
+        print(f"Merging video, audio, and subtitles (Mode: {subtitle_mode})...")
+        final_video_path = os.path.join(output_dir, "final_translated_video.mp4")
+        
+        # Use relative paths for ffmpeg to avoid windows path escaping issues in filter
+        # We need to change cwd to output_dir temporarily or just use absolute path but handle escaping
+        # Actually, using forward slashes with absolute path often works in ffmpeg filters on Windows too,
+        # but relative path is safer if we run from project root.
+        # Let's try to convert absolute path to forward slashes.
+        abs_srt_path = os.path.abspath(trans_srt_path).replace("\\", "/")
+        # Escape colons for ffmpeg filter: C:/ -> C\:/
+        escaped_srt_path = abs_srt_path.replace(":", "\\:")
+        
+        cmd = ["ffmpeg", "-y", "-i", video_path, "-i", final_audio_path]
+
+        if subtitle_mode == "soft":
+            # Soft subtitles logic (mov_text)
+            # -c:v copy (fast)
+            # -c:a aac
+            # -c:s mov_text
+            # Inputs: 0:video, 1:audio, 2:srt
+            cmd.extend(["-i", trans_srt_path])
+            cmd.extend([
+                "-map", "0:v",
+                "-map", "1:a",
+                "-map", "2:s",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-c:s", "mov_text",
+                "-shortest",
+                final_video_path
+            ])
+        else:
+            # Hard subtitles logic (burn-in)
+            # -vf subtitles=...
+            # -c:v libx264 (re-encode)
+            # -c:a aac
+            cmd.extend([
+                "-map", "0:v",
+                "-map", "1:a",
+                "-vf", f"subtitles='{escaped_srt_path}':force_style='Fontsize=20'",
+                "-c:v", "libx264",
+                "-c:a", "aac",
+                "-shortest",
+                final_video_path
+            ])
+        
+        print(f"Executing FFmpeg: {' '.join(cmd)}")
+        subprocess.run(cmd, check=True)
+        
+        return final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path

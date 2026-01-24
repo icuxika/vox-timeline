@@ -92,9 +92,9 @@ TRANSLATION_LANG_MAP = {
     "Russian": "ru"
 }
 
-def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_choice):
+def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_choice, subtitle_mode_choice):
     if not video_file:
-        return None, None, "Error: Please upload a video file."
+        return None, None, None, None, None, "Error: Please upload a video file."
         
     try:
         pipeline = get_translator()
@@ -105,25 +105,29 @@ def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_
         if source_lang_choice == "Auto":
             source_code = "auto"
             
+        # Map subtitle mode choice
+        subtitle_mode = "soft" if "Soft" in subtitle_mode_choice else "hard"
+            
         output_dir = "web_outputs"
         os.makedirs(output_dir, exist_ok=True)
         
         # video_file is a file path in Gradio 4.x
-        final_audio, script, src_srt, trans_srt = pipeline.process_video(
+        final_audio, script, src_srt, trans_srt, final_video = pipeline.process_video(
             video_path=video_file,
             source_lang=source_code,
             target_lang=target_code,
             output_dir=output_dir,
-            speaker=speaker_choice
+            speaker=speaker_choice,
+            subtitle_mode=subtitle_mode
         )
         
         script_json = json.dumps(script, ensure_ascii=False, indent=2)
-        return final_audio, script_json, src_srt, trans_srt, f"Success! Video translated to {target_lang_choice}."
+        return final_audio, script_json, src_srt, trans_srt, final_video, f"Success! Video translated to {target_lang_choice} (Subtitles: {subtitle_mode})."
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return None, None, None, None, f"Translation Error: {str(e)}"
+        return None, None, None, None, None, f"Translation Error: {str(e)}"
 
 # Default demo script (Removed per-segment speaker/language)
 default_script = """[
@@ -188,10 +192,13 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
                 
                 trans_speaker = gr.Dropdown(choices=SPEAKER_OPTIONS, value="uncle_fu", label="Select Speaker (选择配音员)")
                 
+                trans_subtitle_mode = gr.Radio(choices=["Hard Subtitles (硬字幕)", "Soft Subtitles (软字幕)"], value="Hard Subtitles (硬字幕)", label="Subtitle Type (字幕类型)")
+                
                 translate_btn = gr.Button("🌍 Translate & Dub (翻译并配音)", variant="primary")
                 
             with gr.Column(scale=1):
                 trans_status = gr.Textbox(label="Status", interactive=False)
+                trans_video_output = gr.Video(label="Final Translated Video (最终视频)", interactive=False)
                 trans_audio_output = gr.Audio(label="Translated Audio (翻译后音频)", type="filepath", interactive=False)
                 
                 with gr.Row():
@@ -199,12 +206,12 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
                     trans_srt_output = gr.File(label="Translated Subtitles (译文字幕)", interactive=False)
                     
                 trans_script_output = gr.Code(language="json", label="Generated Script (生成脚本)", interactive=False)
-
-        translate_btn.click(
-            fn=translate_video,
-            inputs=[video_input, trans_source_lang, trans_target_lang, trans_speaker],
-            outputs=[trans_audio_output, trans_script_output, src_srt_output, trans_srt_output, trans_status]
-        )
+            
+            translate_btn.click(
+                fn=translate_video,
+                inputs=[video_input, trans_source_lang, trans_target_lang, trans_speaker, trans_subtitle_mode],
+                outputs=[trans_audio_output, trans_script_output, src_srt_output, trans_srt_output, trans_video_output, trans_status]
+            )
 
 if __name__ == "__main__":
     # Launch on 127.0.0.1
