@@ -1,6 +1,67 @@
 import torch
-from transformers import AutoModelForImageTextToText, AutoProcessor, MarianMTModel, MarianTokenizer
+from transformers import AutoModelForImageTextToText, AutoProcessor, MarianMTModel, MarianTokenizer, AutoModelForCausalLM, AutoTokenizer
 from typing import List, Dict, Optional
+
+class HymtTranslator:
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(HymtTranslator, cls).__new__(cls)
+            cls._instance.initialized = False
+        return cls._instance
+
+    def __init__(self, model_id: str = "tencent/HY-MT1.5-1.8B"):
+        if self.initialized:
+            return
+            
+        self.model_id = model_id
+        print(f"Loading Translation model '{model_id}'...")
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+            self.model = AutoModelForCausalLM.from_pretrained(model_id, device_map="auto")
+            self.initialized = True
+            
+            self.lang_map = {
+                "zh": "Chinese",
+                "en": "English",
+                "ja": "Japanese",
+                "ko": "Korean",
+                "es": "Spanish",
+                "fr": "French",
+                "de": "German",
+                "it": "Italian",
+                "pt": "Portuguese",
+                "ru": "Russian"
+            }
+        except Exception as e:
+            print(f"Error loading HymtTranslator: {e}")
+            raise
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        # Convert code to full name for prompt
+        target_lang_name = self.lang_map.get(target_lang, target_lang)
+        
+        messages = [
+            {"role": "user", "content": f"Translate the following segment into {target_lang_name}, without additional explanation.\n\n{text}"},
+        ]
+        
+        tokenized_chat = self.tokenizer.apply_chat_template(
+            messages, 
+            tokenize=True, 
+            add_generation_prompt=True, 
+            return_tensors="pt"
+        )
+        
+        input_ids = tokenized_chat.to(self.model.device)
+        input_len = input_ids.shape[1]
+        
+        with torch.no_grad():
+            outputs = self.model.generate(input_ids, max_new_tokens=2048)
+            
+        # Decode only the new tokens
+        output_text = self.tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
+        return output_text.strip()
 
 class HelsinkiOpusTranslator:
     _instance = None

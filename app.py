@@ -109,7 +109,12 @@ def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_
         subtitle_mode = "soft" if "Soft" in subtitle_mode_choice else "hard"
         
         # Map translator choice
-        translator_model = "helsinki" if "Helsinki" in translator_choice else "gemma"
+        if "Helsinki" in translator_choice:
+            translator_model = "helsinki"
+        elif "HY-MT" in translator_choice:
+            translator_model = "hymt"
+        else:
+            translator_model = "gemma"
             
         output_dir = "web_outputs"
         os.makedirs(output_dir, exist_ok=True)
@@ -198,7 +203,7 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
                 
                 trans_subtitle_mode = gr.Radio(choices=["Hard Subtitles (硬字幕)", "Soft Subtitles (软字幕)"], value="Hard Subtitles (硬字幕)", label="Subtitle Type (字幕类型)")
                 
-                trans_model_choice = gr.Radio(choices=["Google TranslateGemma-4B", "Helsinki-NLP Opus-MT"], value="Google TranslateGemma-4B", label="Translator Model (翻译模型)")
+                trans_model_choice = gr.Radio(choices=["Google TranslateGemma-4B", "Helsinki-NLP Opus-MT", "Tencent HY-MT1.5-1.8B"], value="Google TranslateGemma-4B", label="Translator Model (翻译模型)")
                 
                 translate_btn = gr.Button("🌍 Translate & Dub (翻译并配音)", variant="primary")
                 

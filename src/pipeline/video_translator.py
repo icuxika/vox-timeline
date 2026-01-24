@@ -9,7 +9,7 @@ except ImportError:
     from moviepy.video.io.VideoFileClip import VideoFileClip
 
 from src.core.asr import WhisperASR
-from src.core.translator import TranslateGemma, HelsinkiOpusTranslator
+from src.core.translator import TranslateGemma, HelsinkiOpusTranslator, HymtTranslator
 from src.pipeline.dubbing import VideoDubber
 
 class VideoTranslatorPipeline:
@@ -37,6 +37,8 @@ class VideoTranslatorPipeline:
                 self.translators[choice] = TranslateGemma()
             elif choice == "helsinki":
                 self.translators[choice] = HelsinkiOpusTranslator()
+            elif choice == "hymt":
+                self.translators[choice] = HymtTranslator()
             else:
                 # Default to gemma
                 self.translators[choice] = TranslateGemma()
@@ -83,7 +85,7 @@ class VideoTranslatorPipeline:
             output_dir: Directory to save outputs.
             speaker: TTS speaker to use.
             subtitle_mode: "hard" (burn-in) or "soft" (mov_text stream).
-            translator_choice: "gemma" or "helsinki".
+            translator_choice: "gemma", "helsinki" or "hymt".
             
         Returns:
             Tuple of (final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path)
