@@ -36,8 +36,31 @@ class VideoTranslatorPipeline:
         if not self.translator:
             self.translator = TranslateGemma()
 
+    def _format_time(self, seconds: float) -> str:
+        """Convert seconds to SRT timestamp format: HH:MM:SS,mmm"""
+        millis = int((seconds % 1) * 1000)
+        seconds = int(seconds)
+        minutes = seconds // 60
+        hours = minutes // 60
+        minutes = minutes % 60
+        seconds = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+    def _generate_srt(self, segments: List[Dict], output_path: str, text_key: str = "text"):
+        """Generate SRT file from segments"""
+        with open(output_path, "w", encoding="utf-8") as f:
+            for i, seg in enumerate(segments):
+                start = self._format_time(seg["start"])
+                end = self._format_time(seg["end"])
+                text = seg.get(text_key, "").strip()
+                
+                f.write(f"{i+1}\n")
+                f.write(f"{start} --> {end}\n")
+                f.write(f"{text}\n\n")
+        print(f"Generated subtitles: {output_path}")
+
     def process_video(self, video_path: str, source_lang: str, target_lang: str, 
-                      output_dir: str = "output", speaker: str = "uncle_fu") -> Tuple[str, List[Dict]]:
+                      output_dir: str = "output", speaker: str = "uncle_fu") -> Tuple[str, List[Dict], str, str]:
         """
         Process video: Extract Audio -> ASR -> Translate -> TTS
         
@@ -49,7 +72,7 @@ class VideoTranslatorPipeline:
             speaker: TTS speaker to use.
             
         Returns:
-            Tuple of (final_audio_path, dubbing_script)
+            Tuple of (final_audio_path, dubbing_script, src_srt_path, trans_srt_path)
         """
         self._ensure_models_loaded()
         os.makedirs(output_dir, exist_ok=True)
@@ -95,6 +118,7 @@ class VideoTranslatorPipeline:
                 
                 dubbing_script.append({
                     "start": seg["start"],
+                    "end": seg["end"], # Added for SRT generation
                     "text": translated_text,
                     "instruct": "neutral" # Default instruction
                 })
@@ -108,6 +132,13 @@ class VideoTranslatorPipeline:
         with open(script_path, "w", encoding="utf-8") as f:
             json.dump(dubbing_script, f, ensure_ascii=False, indent=2)
             
+        # Generate Subtitles (SRT)
+        src_srt_path = os.path.join(output_dir, "original.srt")
+        trans_srt_path = os.path.join(output_dir, "translated.srt")
+        
+        self._generate_srt(segments, src_srt_path, text_key="text")
+        self._generate_srt(dubbing_script, trans_srt_path, text_key="text")
+
         # 4. Generate Audio (TTS)
         print("Generating dubbing audio...")
         final_audio_path = os.path.join(output_dir, "final_dubbed.wav")
@@ -122,4 +153,4 @@ class VideoTranslatorPipeline:
             total_duration=video_duration
         )
         
-        return final_audio_path, dubbing_script
+        return final_audio_path, dubbing_script, src_srt_path, trans_srt_path

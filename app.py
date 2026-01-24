@@ -109,7 +109,7 @@ def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_
         os.makedirs(output_dir, exist_ok=True)
         
         # video_file is a file path in Gradio 4.x
-        final_audio, script = pipeline.process_video(
+        final_audio, script, src_srt, trans_srt = pipeline.process_video(
             video_path=video_file,
             source_lang=source_code,
             target_lang=target_code,
@@ -118,12 +118,12 @@ def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_
         )
         
         script_json = json.dumps(script, ensure_ascii=False, indent=2)
-        return final_audio, script_json, f"Success! Video translated to {target_lang_choice}."
+        return final_audio, script_json, src_srt, trans_srt, f"Success! Video translated to {target_lang_choice}."
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return None, None, f"Translation Error: {str(e)}"
+        return None, None, None, None, f"Translation Error: {str(e)}"
 
 # Default demo script (Removed per-segment speaker/language)
 default_script = """[
@@ -193,12 +193,17 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
             with gr.Column(scale=1):
                 trans_status = gr.Textbox(label="Status", interactive=False)
                 trans_audio_output = gr.Audio(label="Translated Audio (翻译后音频)", type="filepath", interactive=False)
+                
+                with gr.Row():
+                    src_srt_output = gr.File(label="Original Subtitles (原文字幕)", interactive=False)
+                    trans_srt_output = gr.File(label="Translated Subtitles (译文字幕)", interactive=False)
+                    
                 trans_script_output = gr.Code(language="json", label="Generated Script (生成脚本)", interactive=False)
 
         translate_btn.click(
             fn=translate_video,
             inputs=[video_input, trans_source_lang, trans_target_lang, trans_speaker],
-            outputs=[trans_audio_output, trans_script_output, trans_status]
+            outputs=[trans_audio_output, trans_script_output, src_srt_output, trans_srt_output, trans_status]
         )
 
 if __name__ == "__main__":
