@@ -92,7 +92,7 @@ TRANSLATION_LANG_MAP = {
     "Russian": "ru"
 }
 
-def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_choice, subtitle_mode_choice):
+def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_choice, subtitle_mode_choice, translator_choice):
     if not video_file:
         return None, None, None, None, None, "Error: Please upload a video file."
         
@@ -107,6 +107,9 @@ def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_
             
         # Map subtitle mode choice
         subtitle_mode = "soft" if "Soft" in subtitle_mode_choice else "hard"
+        
+        # Map translator choice
+        translator_model = "helsinki" if "Helsinki" in translator_choice else "gemma"
             
         output_dir = "web_outputs"
         os.makedirs(output_dir, exist_ok=True)
@@ -118,11 +121,12 @@ def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_
             target_lang=target_code,
             output_dir=output_dir,
             speaker=speaker_choice,
-            subtitle_mode=subtitle_mode
+            subtitle_mode=subtitle_mode,
+            translator_choice=translator_model
         )
         
         script_json = json.dumps(script, ensure_ascii=False, indent=2)
-        return final_audio, script_json, src_srt, trans_srt, final_video, f"Success! Video translated to {target_lang_choice} (Subtitles: {subtitle_mode})."
+        return final_audio, script_json, src_srt, trans_srt, final_video, f"Success! Video translated to {target_lang_choice} (Subtitles: {subtitle_mode}, Model: {translator_choice})."
         
     except Exception as e:
         import traceback
@@ -194,6 +198,8 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
                 
                 trans_subtitle_mode = gr.Radio(choices=["Hard Subtitles (硬字幕)", "Soft Subtitles (软字幕)"], value="Hard Subtitles (硬字幕)", label="Subtitle Type (字幕类型)")
                 
+                trans_model_choice = gr.Radio(choices=["Google TranslateGemma-4B", "Helsinki-NLP Opus-MT"], value="Google TranslateGemma-4B", label="Translator Model (翻译模型)")
+                
                 translate_btn = gr.Button("🌍 Translate & Dub (翻译并配音)", variant="primary")
                 
             with gr.Column(scale=1):
@@ -209,7 +215,7 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
             
             translate_btn.click(
                 fn=translate_video,
-                inputs=[video_input, trans_source_lang, trans_target_lang, trans_speaker, trans_subtitle_mode],
+                inputs=[video_input, trans_source_lang, trans_target_lang, trans_speaker, trans_subtitle_mode, trans_model_choice],
                 outputs=[trans_audio_output, trans_script_output, src_srt_output, trans_srt_output, trans_video_output, trans_status]
             )
 

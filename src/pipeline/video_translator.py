@@ -9,13 +9,13 @@ except ImportError:
     from moviepy.video.io.VideoFileClip import VideoFileClip
 
 from src.core.asr import WhisperASR
-from src.core.translator import TranslateGemma
+from src.core.translator import TranslateGemma, HelsinkiOpusTranslator
 from src.pipeline.dubbing import VideoDubber
 
 class VideoTranslatorPipeline:
     def __init__(self):
         self.asr = None
-        self.translator = None
+        self.translators = {} # Cache translator instances
         self.dubber = VideoDubber()
         
         self.lang_map = {
@@ -31,11 +31,21 @@ class VideoTranslatorPipeline:
             "ru": "Russian"
         }
 
+    def _get_translator(self, choice: str = "gemma"):
+        if choice not in self.translators:
+            if choice == "gemma":
+                self.translators[choice] = TranslateGemma()
+            elif choice == "helsinki":
+                self.translators[choice] = HelsinkiOpusTranslator()
+            else:
+                # Default to gemma
+                self.translators[choice] = TranslateGemma()
+        return self.translators[choice]
+
     def _ensure_models_loaded(self):
         if not self.asr:
             self.asr = WhisperASR()
-        if not self.translator:
-            self.translator = TranslateGemma()
+        # Translators are loaded on demand via _get_translator
 
     def _format_time(self, seconds: float) -> str:
         """Convert seconds to SRT timestamp format: HH:MM:SS,mmm"""
@@ -62,7 +72,7 @@ class VideoTranslatorPipeline:
 
     def process_video(self, video_path: str, source_lang: str, target_lang: str, 
                       output_dir: str = "output", speaker: str = "uncle_fu",
-                      subtitle_mode: str = "hard") -> Tuple[str, List[Dict], str, str, str]:
+                      subtitle_mode: str = "hard", translator_choice: str = "gemma") -> Tuple[str, List[Dict], str, str, str]:
         """
         Process video: Extract Audio -> ASR -> Translate -> TTS -> Merge
         
@@ -73,11 +83,14 @@ class VideoTranslatorPipeline:
             output_dir: Directory to save outputs.
             speaker: TTS speaker to use.
             subtitle_mode: "hard" (burn-in) or "soft" (mov_text stream).
+            translator_choice: "gemma" or "helsinki".
             
         Returns:
             Tuple of (final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path)
         """
         self._ensure_models_loaded()
+        translator = self._get_translator(translator_choice)
+        
         os.makedirs(output_dir, exist_ok=True)
         
         # 1. Extract Audio
@@ -112,7 +125,7 @@ class VideoTranslatorPipeline:
                 continue
                 
             try:
-                translated_text = self.translator.translate(
+                translated_text = translator.translate(
                     original_text, 
                     source_lang=trans_source_lang, 
                     target_lang=target_lang

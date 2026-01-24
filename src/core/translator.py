@@ -1,6 +1,55 @@
 import torch
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor, MarianMTModel, MarianTokenizer
 from typing import List, Dict, Optional
+
+class HelsinkiOpusTranslator:
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(HelsinkiOpusTranslator, cls).__new__(cls)
+            cls._instance.initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self.initialized:
+            return
+        self.models = {}
+        self.tokenizers = {}
+        self.initialized = True
+        
+    def _get_model_pair(self, source_lang: str, target_lang: str):
+        # Handle code mapping if necessary (e.g. zh -> zh_CN in some older models, but opus-mt usually uses generic codes)
+        # opus-mt-en-zh exists.
+        model_name = f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
+        
+        if model_name not in self.models:
+            print(f"Loading Translation model '{model_name}'...")
+            try:
+                tokenizer = MarianTokenizer.from_pretrained(model_name)
+                model = MarianMTModel.from_pretrained(model_name)
+                self.models[model_name] = model
+                self.tokenizers[model_name] = tokenizer
+            except Exception as e:
+                print(f"Error loading {model_name}: {e}")
+                raise RuntimeError(f"Translation model for {source_lang}->{target_lang} not available or failed to load.")
+                
+        return self.models[model_name], self.tokenizers[model_name]
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        model, tokenizer = self._get_model_pair(source_lang, target_lang)
+        
+        # Prepare inputs
+        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+        
+        # Move inputs to model device
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+        
+        # Generate
+        with torch.no_grad():
+            translated = model.generate(**inputs)
+            
+        return tokenizer.decode(translated[0], skip_special_tokens=True)
 
 class TranslateGemma:
     _instance = None
