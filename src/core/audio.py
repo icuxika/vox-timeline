@@ -36,34 +36,69 @@ class AudioTimeline:
 
         self.segments.append((start_ms, segment))
 
-    def export(self, output_path: str, format: str = "wav"):
+    def export(self, output_path: str, format: str = "wav", target_duration_ms: int = None):
         """
         Export the composite audio to a file.
+        
+        Args:
+            output_path: Path to save the audio file.
+            format: Audio format (default: wav).
+            target_duration_ms: If provided, force the output audio to be exactly this duration (in ms).
+                                If content is shorter, pad with silence.
+                                If content is longer, trim the end.
         """
         if not self.segments:
             print("No segments to export.")
+            # If target duration is set, we should export a silent file of that length
+            if target_duration_ms:
+                print(f"Generating silent audio of {target_duration_ms}ms...")
+                final_audio = AudioSegment.silent(duration=target_duration_ms)
+                final_audio.export(output_path, format=format)
+                print(f"Exported silent audio to {output_path}")
             return
 
-        # 1. Determine total duration
-        max_duration_ms = 0
+        # 1. Determine total duration (based on content)
+        content_duration_ms = 0
         for start_ms, seg in self.segments:
             end_ms = start_ms + len(seg)
-            if end_ms > max_duration_ms:
-                max_duration_ms = end_ms
+            if end_ms > content_duration_ms:
+                content_duration_ms = end_ms
 
-        # 2. Create silent base track
-        # Pydub silence is usually created with .silent()
-        # Ensure we have at least some length
-        if max_duration_ms == 0:
-            max_duration_ms = 1000 # 1 sec min
+        # 2. Determine final duration
+        final_duration_ms = content_duration_ms
+        if target_duration_ms is not None:
+            final_duration_ms = target_duration_ms
             
-        final_audio = AudioSegment.silent(duration=max_duration_ms)
+        if final_duration_ms == 0:
+            final_duration_ms = 1000 # 1 sec min safety
 
-        # 3. Overlay all segments
-        print(f"Composing audio (duration: {max_duration_ms/1000:.2f}s)...")
+        # 3. Create silent base track
+        final_audio = AudioSegment.silent(duration=final_duration_ms)
+
+        # 4. Overlay all segments
+        print(f"Composing audio (duration: {final_duration_ms/1000:.2f}s)...")
         for start_ms, seg in self.segments:
+            # Skip segments that start after the target duration
+            if start_ms >= final_duration_ms:
+                print(f"  [Warning] Segment at {start_ms}ms skipped (beyond target duration {final_duration_ms}ms)")
+                continue
+                
+            # If segment extends beyond target, it will be naturally cropped by the base track length 
+            # ONLY IF we don't expand. Pydub's overlay usually expands if the overlay is longer.
+            # So we should crop the segment if needed.
+            if start_ms + len(seg) > final_duration_ms:
+                 remaining_space = final_duration_ms - start_ms
+                 if remaining_space > 0:
+                     seg = seg[:remaining_space]
+                 else:
+                     continue
+
             final_audio = final_audio.overlay(seg, position=start_ms)
 
-        # 4. Export
+        # Ensure exact length (in case overlay expanded it, though we tried to prevent it)
+        if len(final_audio) != final_duration_ms:
+            final_audio = final_audio[:final_duration_ms]
+            
+        # 5. Export
         final_audio.export(output_path, format=format)
         print(f"Exported audio to {output_path}")

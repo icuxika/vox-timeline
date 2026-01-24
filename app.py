@@ -3,9 +3,11 @@ import json
 import os
 import tempfile
 from src.pipeline.dubbing import VideoDubber
+from src.pipeline.video_translator import VideoTranslatorPipeline
 
 # Global instance to keep model loaded
 dubber = None
+translator_pipeline = None
 
 def get_dubber():
     global dubber
@@ -13,6 +15,13 @@ def get_dubber():
         print("Initializing VideoDubber...")
         dubber = VideoDubber()
     return dubber
+
+def get_translator():
+    global translator_pipeline
+    if translator_pipeline is None:
+        print("Initializing VideoTranslatorPipeline...")
+        translator_pipeline = VideoTranslatorPipeline()
+    return translator_pipeline
 
 def generate_audio(script_json_str, speaker_choice, language_choice):
     try:
@@ -70,6 +79,52 @@ LANGUAGE_OPTIONS = [
     "Japanese", "Korean", "Portuguese", "Russian", "Spanish"
 ]
 
+TRANSLATION_LANG_MAP = {
+    "Chinese": "zh",
+    "English": "en",
+    "Japanese": "ja",
+    "Korean": "ko",
+    "Spanish": "es",
+    "French": "fr",
+    "German": "de",
+    "Italian": "it",
+    "Portuguese": "pt",
+    "Russian": "ru"
+}
+
+def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_choice):
+    if not video_file:
+        return None, None, "Error: Please upload a video file."
+        
+    try:
+        pipeline = get_translator()
+        
+        # Map friendly name to code
+        target_code = TRANSLATION_LANG_MAP.get(target_lang_choice, "en")
+        source_code = TRANSLATION_LANG_MAP.get(source_lang_choice, "auto")
+        if source_lang_choice == "Auto":
+            source_code = "auto"
+            
+        output_dir = "web_outputs"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # video_file is a file path in Gradio 4.x
+        final_audio, script = pipeline.process_video(
+            video_path=video_file,
+            source_lang=source_code,
+            target_lang=target_code,
+            output_dir=output_dir,
+            speaker=speaker_choice
+        )
+        
+        script_json = json.dumps(script, ensure_ascii=False, indent=2)
+        return final_audio, script_json, f"Success! Video translated to {target_lang_choice}."
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return None, None, f"Translation Error: {str(e)}"
+
 # Default demo script (Removed per-segment speaker/language)
 default_script = """[
   {
@@ -91,32 +146,60 @@ default_script = """[
 
 with gr.Blocks(title="Vox Timeline Web UI") as app:
     gr.Markdown("# Vox Timeline - AI Video Dubbing System")
-    gr.Markdown("输入 JSON 格式的配音脚本，并在右侧选择全局 **Speaker** 和 **Language**，系统将为整个视频生成统一风格的配音。")
     
-    with gr.Row():
-        with gr.Column(scale=2):
-            script_input = gr.Code(value=default_script, language="json", label="Dubbing Script (JSON)")
-            
-            with gr.Accordion("📚 查看角色详情 (Speaker Details)", open=False):
-                gr.Markdown(SPEAKER_INFO)
+    with gr.Tab("📝 Script Dubbing (脚本配音)"):
+        gr.Markdown("输入 JSON 格式的配音脚本，并在右侧选择全局 **Speaker** 和 **Language**，系统将为整个视频生成统一风格的配音。")
         
-        with gr.Column(scale=1):
-            gr.Markdown("### 🎛️ 全局设置 (Global Settings)")
+        with gr.Row():
+            with gr.Column(scale=2):
+                script_input = gr.Code(value=default_script, language="json", label="Dubbing Script (JSON)")
+                
+                with gr.Accordion("📚 查看角色详情 (Speaker Details)", open=False):
+                    gr.Markdown(SPEAKER_INFO)
             
-            # Global controls
-            speaker_dropdown = gr.Dropdown(choices=SPEAKER_OPTIONS, value="uncle_fu", label="Select Speaker (选择说话人)")
-            language_dropdown = gr.Dropdown(choices=LANGUAGE_OPTIONS, value="Chinese", label="Select Language (选择语言)")
-            
-            generate_btn = gr.Button("🎵 Generate Audio (生成音频)", variant="primary")
-            
-            status_output = gr.Textbox(label="Status", interactive=False)
-            audio_output = gr.Audio(label="Generated Audio", type="filepath", interactive=False)
+            with gr.Column(scale=1):
+                gr.Markdown("### 🎛️ 全局设置 (Global Settings)")
+                
+                # Global controls
+                speaker_dropdown = gr.Dropdown(choices=SPEAKER_OPTIONS, value="uncle_fu", label="Select Speaker (选择说话人)")
+                language_dropdown = gr.Dropdown(choices=LANGUAGE_OPTIONS, value="Chinese", label="Select Language (选择语言)")
+                
+                generate_btn = gr.Button("🎵 Generate Audio (生成音频)", variant="primary")
+                
+                status_output = gr.Textbox(label="Status", interactive=False)
+                audio_output = gr.Audio(label="Generated Audio", type="filepath", interactive=False)
 
-    generate_btn.click(
-        fn=generate_audio,
-        inputs=[script_input, speaker_dropdown, language_dropdown],
-        outputs=[audio_output, status_output]
-    )
+        generate_btn.click(
+            fn=generate_audio,
+            inputs=[script_input, speaker_dropdown, language_dropdown],
+            outputs=[audio_output, status_output]
+        )
+
+    with gr.Tab("🎥 Video Translation (视频翻译配音)"):
+        gr.Markdown("上传视频，系统将自动提取音频、识别字幕、翻译并生成新的配音。")
+        
+        with gr.Row():
+            with gr.Column(scale=1):
+                video_input = gr.Video(label="Upload Video (上传视频)")
+                
+                with gr.Row():
+                    trans_source_lang = gr.Dropdown(choices=LANGUAGE_OPTIONS, value="Auto", label="Source Language (源语言)")
+                    trans_target_lang = gr.Dropdown(choices=[l for l in LANGUAGE_OPTIONS if l != "Auto"], value="Chinese", label="Target Language (目标语言)")
+                
+                trans_speaker = gr.Dropdown(choices=SPEAKER_OPTIONS, value="uncle_fu", label="Select Speaker (选择配音员)")
+                
+                translate_btn = gr.Button("🌍 Translate & Dub (翻译并配音)", variant="primary")
+                
+            with gr.Column(scale=1):
+                trans_status = gr.Textbox(label="Status", interactive=False)
+                trans_audio_output = gr.Audio(label="Translated Audio (翻译后音频)", type="filepath", interactive=False)
+                trans_script_output = gr.Code(language="json", label="Generated Script (生成脚本)", interactive=False)
+
+        translate_btn.click(
+            fn=translate_video,
+            inputs=[video_input, trans_source_lang, trans_target_lang, trans_speaker],
+            outputs=[trans_audio_output, trans_script_output, trans_status]
+        )
 
 if __name__ == "__main__":
     # Launch on 127.0.0.1

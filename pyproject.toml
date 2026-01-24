@@ -13,6 +13,8 @@ dependencies = [
   "moviepy>=1.0.3",
   "pydub>=0.25.1",
   "gradio>=4.0.0",
+  "transformers>=4.57.3",
+  "accelerate>=1.12.0",
 ]
 
 [tool.uv.sources]

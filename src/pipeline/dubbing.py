@@ -15,7 +15,8 @@ class VideoDubber:
             return json.load(f)
 
     def generate_audio_track(self, script: List[Dict], output_path: str, debug_dir: Optional[str] = None, 
-                             default_speaker: str = "Uncle_Fu", default_language: str = "Chinese"):
+                             default_speaker: str = "Uncle_Fu", default_language: str = "Chinese",
+                             total_duration: Optional[float] = None):
         timeline = AudioTimeline()
         
         if debug_dir:
@@ -52,7 +53,9 @@ class VideoDubber:
             except Exception as e:
                 print(f"Error processing segment {i}: {e}")
         
-        timeline.export(output_path)
+        # Convert total_duration to ms if provided
+        target_duration_ms = int(total_duration * 1000) if total_duration else None
+        timeline.export(output_path, target_duration_ms=target_duration_ms)
         return output_path
 
     def dub_video(self, video_path: str, audio_path: str, output_path: str):
