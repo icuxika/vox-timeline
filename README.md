@@ -6,6 +6,11 @@ Vox Timeline 是一个基于 Qwen3-TTS 的智能视频配音系统。它支持�
 
 *   **脚本驱动配音**: 通过 JSON 文件精确控制每句台词的内容、开始时间、说话人和语气。
 *   **高质量 TTS**: 集成 Qwen3-TTS 模型，支持多语种和情感控制。
+*   **全流程视频翻译**:
+    *   **ASR**: 使用 Whisper 模型进行语音识别。
+    *   **翻译**: 支持 Google TranslateGemma-4B 和 Helsinki-NLP Opus-MT 多种翻译模型。
+    *   **配音**: 自动将翻译后的文本转换为语音。
+    *   **视频合成**: 支持生成带硬字幕或软字幕的最终视频，自动对齐音画。
 *   **智能时间轴**:
     *   **自动防重叠 (Auto-Shift)**: 当生成的语音长度超过设定的时间间隔时，后续音频会自动顺延，防止重叠。
     *   **高保真合成**: 使用 `Pydub` 进行音频处理，确保音质清晰，无削波或失真。
@@ -15,10 +20,20 @@ Vox Timeline 是一个基于 Qwen3-TTS 的智能视频配音系统。它支持�
 
 ### 1. 安装依赖
 
+本项目使用 `uv` 进行依赖管理。
+
+**方式 A: 使用 uv (推荐)**
 确保已安装 `uv`，然后同步环境：
 
 ```bash
 uv sync
+```
+
+**方式 B: 使用 pip**
+如果不使用 uv，也可以通过 requirements.txt 安装：
+
+```bash
+pip install -r requirements.txt
 ```
 
 ### 2. 准备脚本
@@ -61,7 +76,12 @@ python main.py --script script.json --output debug.wav --debug-dir ./debug_clips
 
 ### 4. Web UI 可视化界面
 
-项目提供了一个基于 Web 的图形界面，方便在线编辑脚本、生成和试听音频。
+项目提供了一个基于 Web 的图形界面，包含两个主要功能模块：
+
+1.  **Script Dubbing (脚本配音)**: 输入 JSON 脚本，生成配音。
+2.  **Video Translation (视频翻译配音)**: 上传视频，一键完成“识别 -> 翻译 -> 配音 -> 字幕 -> 合成”。
+    *   支持选择翻译模型（Google Gemma 或 Helsinki-NLP）。
+    *   支持选择字幕类型（硬字幕或软字幕）。
 
 启动 Web UI:
 ```bash

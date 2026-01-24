@@ -15,6 +15,8 @@ dependencies = [
   "gradio>=4.0.0",
   "transformers>=4.57.3",
   "accelerate>=1.12.0",
+  "sentencepiece>=0.1.99",
+  "sacremoses>=0.1.1",
 ]
 
 [tool.uv.sources]
