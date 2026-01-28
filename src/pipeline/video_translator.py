@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import time
+import re
 from typing import Optional, List, Dict, Tuple, Iterator, Union
 try:
     from moviepy.editor import VideoFileClip
@@ -13,11 +14,17 @@ from src.core.asr import WhisperASR
 from src.core.translator import TranslateGemma, HelsinkiOpusTranslator, HymtTranslator
 from src.pipeline.dubbing import VideoDubber
 
+def format_remaining(seconds):
+    if seconds is None or seconds < 0: return "..."
+    if seconds < 60: return f"{int(seconds)}s"
+    return f"{int(seconds)//60}m {int(seconds)%60}s"
+
 class VideoTranslatorPipeline:
     def __init__(self):
         self.asr = None
         self.translators = {} # Cache translator instances
         self.dubber = VideoDubber()
+        self.cancel_flag = False
         
         self.lang_map = {
             "zh": "Chinese",
@@ -31,6 +38,10 @@ class VideoTranslatorPipeline:
             "pt": "Portuguese",
             "ru": "Russian"
         }
+
+    def cancel_task(self):
+        """Set cancel flag to stop processing"""
+        self.cancel_flag = True
 
     def _get_translator(self, choice: str = "gemma"):
         if choice not in self.translators:
@@ -83,6 +94,7 @@ class VideoTranslatorPipeline:
         Yields final result: ("result", (final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path))
         """
         self._ensure_models_loaded()
+        self.cancel_flag = False # Reset flag
         translator = self._get_translator(translator_choice)
         
         os.makedirs(output_dir, exist_ok=True)
@@ -117,10 +129,20 @@ class VideoTranslatorPipeline:
         trans_source_lang = source_lang if source_lang != "auto" else "en"
         
         total_segments = len(segments)
+        trans_start_time = time.time()
+        
         for i, seg in enumerate(segments):
+            if self.cancel_flag:
+                raise InterruptedError("Task cancelled by user")
+                
             # Progress update for translation
+            elapsed = time.time() - trans_start_time
+            avg_time = elapsed / max(i, 1) # Avoid div by zero initially
+            remaining = avg_time * (total_segments - i) if i > 0 else 0
+            etr_msg = f" (ETR: {format_remaining(remaining)})" if i > 0 else ""
+            
             progress = 0.30 + (0.40 * (i / max(total_segments, 1))) # 30% to 70%
-            yield ("progress", progress, f"Translating segment {i+1}/{total_segments}...")
+            yield ("progress", progress, f"Translating segment {i+1}/{total_segments}{etr_msg}...")
             
             original_text = seg["text"].strip()
             if not original_text:
@@ -166,13 +188,37 @@ class VideoTranslatorPipeline:
             
             tts_lang = self.lang_map.get(target_lang, "English")
             
-            self.dubber.generate_audio_track(
+            # Use generator for progress
+            generator = self.dubber.generate_audio_track_iter(
                 script=dubbing_script,
                 output_path=final_audio_path,
                 default_speaker=speaker,
                 default_language=tts_lang,
                 total_duration=video_duration
             )
+            
+            tts_start_time = time.time()
+            
+            for item in generator:
+                if self.cancel_flag:
+                    raise InterruptedError("Task cancelled by user")
+                    
+                if item[0] == "progress":
+                    # ("progress", i, total, msg)
+                    cur, total, msg = item[1], item[2], item[3]
+                    
+                    elapsed = time.time() - tts_start_time
+                    avg_time = elapsed / max(cur, 1)
+                    remaining = avg_time * (total - cur) if cur > 0 else 0
+                    etr_msg = f" (ETR: {format_remaining(remaining)})" if cur > 0 else ""
+                    
+                    # Map TTS progress to 75% -> 90% range
+                    overall_progress = 0.75 + (0.15 * (cur / max(total, 1)))
+                    yield ("progress", overall_progress, f"{msg}{etr_msg}")
+                    
+                elif item[0] == "result":
+                    # Final result path
+                    pass
         else:
             print("Skipping Dubbing (using original audio)...")
             final_audio_path = audio_path # Use the extracted original audio
@@ -208,6 +254,7 @@ class VideoTranslatorPipeline:
                 "-c:a", "aac",
                 "-c:s", "mov_text",
                 "-shortest",
+                "-progress", "pipe:1", # Output progress to stdout
                 final_video_path
             ])
         else:
@@ -222,18 +269,63 @@ class VideoTranslatorPipeline:
                 "-c:v", "libx264",
                 "-c:a", "aac",
                 "-shortest",
+                "-progress", "pipe:1", # Output progress to stdout
                 final_video_path
             ])
         
         print(f"Executing FFmpeg: {' '.join(cmd)}")
         
-        # Use Popen to allow cancellation
-        proc = subprocess.Popen(cmd)
-        while proc.poll() is None:
-            yield ("progress", 0.95, "Rendering video (FFmpeg)...")
-            time.sleep(1.0)
+        # Use Popen to allow cancellation and progress reading
+        # NOTE: -progress pipe:1 writes to stdout. FFmpeg logs go to stderr.
+        # We redirect stderr to stdout to avoid buffer deadlock if stderr fills up.
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, encoding='utf-8')
+        
+        ffmpeg_start_time = time.time()
+        
+        # We need to poll stdout non-blockingly or use threads.
+        # Simple approach: Since -progress pipe:1 outputs small lines frequently, 
+        # reading line-by-line is usually fine unless FFmpeg hangs without output.
+        
+        # Pattern for out_time_us=123456
+        time_pattern = re.compile(r"out_time_us=(\d+)")
+        
+        # We can loop over proc.stdout
+        if proc.stdout:
+            for line in proc.stdout:
+                if self.cancel_flag:
+                    proc.terminate()
+                    raise InterruptedError("Task cancelled by user")
+                    
+                line = line.strip()
+                # Print FFmpeg log to console for debugging
+                # print(f"[FFmpeg] {line}") 
+                
+                match = time_pattern.search(line)
+                if match:
+                    out_time_us = int(match.group(1))
+                    current_sec = out_time_us / 1000000.0
+                    
+                    if video_duration > 0:
+                        prog_ratio = min(current_sec / video_duration, 1.0)
+                        
+                        elapsed = time.time() - ffmpeg_start_time
+                        if elapsed > 1 and prog_ratio > 0.01:
+                            total_estimated = elapsed / prog_ratio
+                            remaining = total_estimated - elapsed
+                            etr_msg = f" (ETR: {format_remaining(remaining)})"
+                        else:
+                            etr_msg = ""
+                            
+                        # Map to 90-99%
+                        ui_prog = 0.90 + (0.09 * prog_ratio)
+                        yield ("progress", ui_prog, f"Rendering video (FFmpeg) {int(prog_ratio*100)}%{etr_msg}...")
+        
+        proc.wait()
             
         if proc.returncode != 0:
-            raise RuntimeError(f"FFmpeg failed with return code {proc.returncode}")
+            # Stderr is merged into stdout, so we can't read it separately here.
+            # But we could capture the last few lines of stdout if we were buffering it.
+            # For now, just raise generic error.
+            raise RuntimeError(f"FFmpeg failed with return code {proc.returncode}. Check console logs for details.")
         
         yield ("result", (final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path))

@@ -16,7 +16,30 @@ class VideoDubber:
 
     def generate_audio_track(self, script: List[Dict], output_path: str, debug_dir: Optional[str] = None, 
                              default_speaker: str = "Uncle_Fu", default_language: str = "Chinese",
+                             total_duration: Optional[float] = None, progress_callback=None) -> str:
+        """
+        Synchronous wrapper for audio generation.
+        """
+        generator = self.generate_audio_track_iter(
+            script, output_path, debug_dir, default_speaker, default_language, total_duration
+        )
+        result_path = ""
+        for item in generator:
+            if item[0] == "progress":
+                if progress_callback:
+                    progress_callback(*item[1:])
+            elif item[0] == "result":
+                result_path = item[1]
+        return result_path
+
+    def generate_audio_track_iter(self, script: List[Dict], output_path: str, debug_dir: Optional[str] = None, 
+                             default_speaker: str = "Uncle_Fu", default_language: str = "Chinese",
                              total_duration: Optional[float] = None):
+        """
+        Generator version of audio generation.
+        Yields ("progress", current, total, message)
+        Yields ("result", output_path)
+        """
         timeline = AudioTimeline()
         
         if debug_dir:
@@ -24,7 +47,11 @@ class VideoDubber:
             print(f"Debug mode enabled: saving segments to {debug_dir}")
 
         print(f"Processing {len(script)} segments with speaker={default_speaker}, language={default_language}...")
+        total_segments = len(script)
+        
         for i, segment in enumerate(script):
+            yield ("progress", i, total_segments, f"Generating audio for segment {i+1}/{total_segments}")
+                
             start_time = segment.get("start", 0.0)
             text = segment.get("text", "")
             # Override script settings with global defaults if provided, 
@@ -56,7 +83,7 @@ class VideoDubber:
         # Convert total_duration to ms if provided
         target_duration_ms = int(total_duration * 1000) if total_duration else None
         timeline.export(output_path, target_duration_ms=target_duration_ms)
-        return output_path
+        yield ("result", output_path)
 
     def dub_video(self, video_path: str, audio_path: str, output_path: str):
         """

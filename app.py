@@ -23,6 +23,12 @@ def get_translator():
         translator_pipeline = VideoTranslatorPipeline()
     return translator_pipeline
 
+def cancel_translation():
+    global translator_pipeline
+    if translator_pipeline:
+        translator_pipeline.cancel_task()
+    return "Cancelling task..."
+
 def generate_audio(script_json_str, speaker_choice, language_choice):
     try:
         script = json.loads(script_json_str)
@@ -247,9 +253,9 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
             )
             
             cancel_btn.click(
-                fn=None,
+                fn=cancel_translation,
                 inputs=None,
-                outputs=None,
+                outputs=[trans_status],
                 cancels=[translate_event]
             )
 
