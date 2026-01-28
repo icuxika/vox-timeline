@@ -1,7 +1,8 @@
 import os
 import json
 import subprocess
-from typing import Optional, List, Dict, Tuple
+import time
+from typing import Optional, List, Dict, Tuple, Iterator, Union
 try:
     from moviepy.editor import VideoFileClip
 except ImportError:
@@ -74,21 +75,12 @@ class VideoTranslatorPipeline:
 
     def process_video(self, video_path: str, source_lang: str, target_lang: str, 
                       output_dir: str = "output", speaker: str = "uncle_fu",
-                      subtitle_mode: str = "hard", translator_choice: str = "gemma") -> Tuple[str, List[Dict], str, str, str]:
+                      subtitle_mode: str = "hard", translator_choice: str = "gemma",
+                      dubbing_enabled: bool = True) -> Iterator[Union[Tuple[str, float, str], Tuple[str, Tuple[str, List[Dict], str, str, str]]]]:
         """
         Process video: Extract Audio -> ASR -> Translate -> TTS -> Merge
-        
-        Args:
-            video_path: Path to input video.
-            source_lang: Source language code (e.g., 'zh', 'en').
-            target_lang: Target language code (e.g., 'en', 'zh').
-            output_dir: Directory to save outputs.
-            speaker: TTS speaker to use.
-            subtitle_mode: "hard" (burn-in) or "soft" (mov_text stream).
-            translator_choice: "gemma", "helsinki" or "hymt".
-            
-        Returns:
-            Tuple of (final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path)
+        Yields progress updates: ("progress", float, "message")
+        Yields final result: ("result", (final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path))
         """
         self._ensure_models_loaded()
         translator = self._get_translator(translator_choice)
@@ -96,6 +88,7 @@ class VideoTranslatorPipeline:
         os.makedirs(output_dir, exist_ok=True)
         
         # 1. Extract Audio
+        yield ("progress", 0.05, f"Extracting audio from {os.path.basename(video_path)}...")
         print(f"Processing video: {video_path}")
         audio_path = os.path.join(output_dir, "temp_extracted.wav")
         
@@ -108,12 +101,14 @@ class VideoTranslatorPipeline:
             raise RuntimeError(f"Failed to extract audio from video: {e}")
         
         # 2. ASR (Whisper)
+        yield ("progress", 0.15, f"Running ASR (Source: {source_lang})...")
         print(f"Running ASR (Source: {source_lang})...")
         # Whisper can auto-detect, but providing language helps accuracy if known
         asr_lang = source_lang if source_lang != "auto" else None
         segments = self.asr.transcribe(audio_path, language=asr_lang)
         
         # 3. Translate (Gemma)
+        yield ("progress", 0.30, f"Translating to {target_lang}...")
         print(f"Translating to {target_lang}...")
         dubbing_script = []
         
@@ -121,7 +116,12 @@ class VideoTranslatorPipeline:
         # TODO: Enhance ASR wrapper to return detected language
         trans_source_lang = source_lang if source_lang != "auto" else "en"
         
+        total_segments = len(segments)
         for i, seg in enumerate(segments):
+            # Progress update for translation
+            progress = 0.30 + (0.40 * (i / max(total_segments, 1))) # 30% to 70%
+            yield ("progress", progress, f"Translating segment {i+1}/{total_segments}...")
+            
             original_text = seg["text"].strip()
             if not original_text:
                 continue
@@ -151,6 +151,7 @@ class VideoTranslatorPipeline:
             json.dump(dubbing_script, f, ensure_ascii=False, indent=2)
             
         # Generate Subtitles (SRT)
+        yield ("progress", 0.70, "Generating subtitles...")
         src_srt_path = os.path.join(output_dir, "original.srt")
         trans_srt_path = os.path.join(output_dir, "translated.srt")
         
@@ -158,20 +159,26 @@ class VideoTranslatorPipeline:
         self._generate_srt(dubbing_script, trans_srt_path, text_key="text")
 
         # 4. Generate Audio (TTS)
-        print("Generating dubbing audio...")
-        final_audio_path = os.path.join(output_dir, "final_dubbed.wav")
-        
-        tts_lang = self.lang_map.get(target_lang, "English")
-        
-        self.dubber.generate_audio_track(
-            script=dubbing_script,
-            output_path=final_audio_path,
-            default_speaker=speaker,
-            default_language=tts_lang,
-            total_duration=video_duration
-        )
+        yield ("progress", 0.75, "Generating dubbing audio...")
+        if dubbing_enabled:
+            print("Generating dubbing audio...")
+            final_audio_path = os.path.join(output_dir, "final_dubbed.wav")
+            
+            tts_lang = self.lang_map.get(target_lang, "English")
+            
+            self.dubber.generate_audio_track(
+                script=dubbing_script,
+                output_path=final_audio_path,
+                default_speaker=speaker,
+                default_language=tts_lang,
+                total_duration=video_duration
+            )
+        else:
+            print("Skipping Dubbing (using original audio)...")
+            final_audio_path = audio_path # Use the extracted original audio
         
         # 5. Merge Video + Audio + Subtitles
+        yield ("progress", 0.90, "Merging video, audio, and subtitles...")
         print(f"Merging video, audio, and subtitles (Mode: {subtitle_mode})...")
         final_video_path = os.path.join(output_dir, "final_translated_video.mp4")
         
@@ -219,6 +226,14 @@ class VideoTranslatorPipeline:
             ])
         
         print(f"Executing FFmpeg: {' '.join(cmd)}")
-        subprocess.run(cmd, check=True)
         
-        return final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path
+        # Use Popen to allow cancellation
+        proc = subprocess.Popen(cmd)
+        while proc.poll() is None:
+            yield ("progress", 0.95, "Rendering video (FFmpeg)...")
+            time.sleep(1.0)
+            
+        if proc.returncode != 0:
+            raise RuntimeError(f"FFmpeg failed with return code {proc.returncode}")
+        
+        yield ("result", (final_audio_path, dubbing_script, src_srt_path, trans_srt_path, final_video_path))

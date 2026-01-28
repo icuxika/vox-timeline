@@ -92,9 +92,10 @@ TRANSLATION_LANG_MAP = {
     "Russian": "ru"
 }
 
-def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_choice, subtitle_mode_choice, translator_choice):
+def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_choice, subtitle_mode_choice, translator_choice, audio_mode_choice, progress=gr.Progress()):
     if not video_file:
-        return None, None, None, None, None, "Error: Please upload a video file."
+        yield None, None, None, None, None, "Error: Please upload a video file."
+        return
         
     try:
         pipeline = get_translator()
@@ -116,27 +117,45 @@ def translate_video(video_file, source_lang_choice, target_lang_choice, speaker_
         else:
             translator_model = "gemma"
             
+        # Map audio mode
+        dubbing_enabled = "Dubbing" in audio_mode_choice
+            
         output_dir = "web_outputs"
         os.makedirs(output_dir, exist_ok=True)
         
         # video_file is a file path in Gradio 4.x
-        final_audio, script, src_srt, trans_srt, final_video = pipeline.process_video(
+        # Consume generator
+        generator = pipeline.process_video(
             video_path=video_file,
             source_lang=source_code,
             target_lang=target_code,
             output_dir=output_dir,
             speaker=speaker_choice,
             subtitle_mode=subtitle_mode,
-            translator_choice=translator_model
+            translator_choice=translator_model,
+            dubbing_enabled=dubbing_enabled
         )
         
-        script_json = json.dumps(script, ensure_ascii=False, indent=2)
-        return final_audio, script_json, src_srt, trans_srt, final_video, f"Success! Video translated to {target_lang_choice} (Subtitles: {subtitle_mode}, Model: {translator_choice})."
+        final_result = None
+        
+        for update in generator:
+            type_ = update[0]
+            if type_ == "progress":
+                _, prog_val, msg = update
+                progress(prog_val, desc=msg)
+                yield None, None, None, None, None, f"Running: {msg}"
+            elif type_ == "result":
+                _, final_result = update
+        
+        if final_result:
+            final_audio, dubbing_script, src_srt, trans_srt, final_video = final_result
+            script_json = json.dumps(dubbing_script, ensure_ascii=False, indent=2)
+            yield final_audio, script_json, src_srt, trans_srt, final_video, f"Success! Video translated to {target_lang_choice} (Subtitles: {subtitle_mode}, Model: {translator_choice})."
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return None, None, None, None, None, f"Translation Error: {str(e)}"
+        yield None, None, None, None, None, f"Translation Error: {str(e)}"
 
 # Default demo script (Removed per-segment speaker/language)
 default_script = """[
@@ -202,10 +221,13 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
                 trans_speaker = gr.Dropdown(choices=SPEAKER_OPTIONS, value="uncle_fu", label="Select Speaker (选择配音员)")
                 
                 trans_subtitle_mode = gr.Radio(choices=["Hard Subtitles (硬字幕)", "Soft Subtitles (软字幕)"], value="Hard Subtitles (硬字幕)", label="Subtitle Type (字幕类型)")
+                trans_audio_mode = gr.Radio(choices=["AI Dubbing (AI配音)", "Original Audio (保留原声)"], value="AI Dubbing (AI配音)", label="Audio Mode (音频模式)")
                 
                 trans_model_choice = gr.Radio(choices=["Google TranslateGemma-4B", "Helsinki-NLP Opus-MT", "Tencent HY-MT1.5-1.8B"], value="Google TranslateGemma-4B", label="Translator Model (翻译模型)")
                 
-                translate_btn = gr.Button("🌍 Translate & Dub (翻译并配音)", variant="primary")
+                with gr.Row():
+                    translate_btn = gr.Button("🌍 Translate & Dub (翻译并配音)", variant="primary", scale=3)
+                    cancel_btn = gr.Button("🛑 Cancel (取消)", variant="stop", scale=1)
                 
             with gr.Column(scale=1):
                 trans_status = gr.Textbox(label="Status", interactive=False)
@@ -218,10 +240,17 @@ with gr.Blocks(title="Vox Timeline Web UI") as app:
                     
                 trans_script_output = gr.Code(language="json", label="Generated Script (生成脚本)", interactive=False)
             
-            translate_btn.click(
+            translate_event = translate_btn.click(
                 fn=translate_video,
-                inputs=[video_input, trans_source_lang, trans_target_lang, trans_speaker, trans_subtitle_mode, trans_model_choice],
+                inputs=[video_input, trans_source_lang, trans_target_lang, trans_speaker, trans_subtitle_mode, trans_model_choice, trans_audio_mode],
                 outputs=[trans_audio_output, trans_script_output, src_srt_output, trans_srt_output, trans_video_output, trans_status]
+            )
+            
+            cancel_btn.click(
+                fn=None,
+                inputs=None,
+                outputs=None,
+                cancels=[translate_event]
             )
 
 if __name__ == "__main__":
